@@ -7,9 +7,11 @@
 void delay(volatile int cycles);
 void InitLed(uint8_t ledPin);
 void InitSW(uint8_t swPin);
+void ToggleLed(uint8_t ledPin);
 void InitInterrupt(uint8_t swPin);
 
 volatile uint8_t g_ledPin = LED_GREEN;
+volatile uint8_t g_swPin = SW2;
 
 int main(void)
 {
@@ -55,6 +57,11 @@ void InitSW(uint8_t swPin)
 	PTC->PDDR &= ~(1 << swPin);
 }
 
+void ToggleLed(uint8_t ledPin)
+{
+	PTD->PTOR |= (1 << ledPin);
+}
+
 void InitInterrupt(uint8_t swPin)
 {
 	// Enable interrupt on Falling Edge
@@ -67,9 +74,9 @@ void InitInterrupt(uint8_t swPin)
 // Interrupt Service Routine (ISR)
 void PORTC_IRQHandler(void)
 {
-	if (PORTC->ISFR & (1 << SW2))
+	if (PORTC->ISFR & (1 << g_swPin))
 	{
-		PTD->PTOR |= (1 << g_ledPin); // Toggle LED
-		PORTC->ISFR = (1 << SW2);	  // Clear ISF
+		ToggleLed(g_ledPin);
+		PORTC->ISFR |= (1 << g_swPin);
 	}
 }
