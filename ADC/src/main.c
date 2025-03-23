@@ -2,22 +2,44 @@
 #include "clocks.h"
 #include "stdint.h"
 
-#define LED_RED 15	 // PTD15
-#define LED_GREEN 16 // PTD16
-#define LED_BLUE 0	 // PTD0
+#define LED_RED 15	   // PTD15
+#define LED_GREEN 16   // PTD16
+#define LED_BLUE 0	   // PTD0
+#define POT_CHANNEL 12 // Channel 12 for potentionmeter
 
-void LED_init(uint8_t ledPin)
+void Delay(volatile int cycles)
 {
-	// Enable clock for LPIT
+	while (cycles--)
+		;
+}
+
+void LED_init(void)
+{
+	// Enable clock for PORTD
 	PCC->PCCn[PCC_PORTD_INDEX] |= PCC_PCCn_CGC_MASK;
 
-	// Select MUX as GPIO and Enable DSE
-	PORTD->PCR[ledPin] |= PORT_PCR_MUX(1);
-	PORTD->PCR[ledPin] |= PORT_PCR_DSE_MASK;
+	// Select MUX as GPIO
+	PORTD->PCR[LED_RED] = PORT_PCR_MUX(1);
+	PORTD->PCR[LED_GREEN] = PORT_PCR_MUX(1);
+	PORTD->PCR[LED_BLUE] = PORT_PCR_MUX(1);
 
-	// Set data direction as output and turn LED on at first
-	PTD->PDDR |= (1 << ledPin);
-	PTD->PDOR &= ~(1 << ledPin);
+	// Set data direction as output
+	PTD->PDDR |= (1 << LED_RED) | (1 << LED_GREEN) | (1 << LED_BLUE);
+
+	// Turn off all LEDs initially (setting = off in sample code)
+	PTD->PSOR |= (1 << LED_RED) | (1 << LED_GREEN) | (1 << LED_BLUE);
+}
+
+// Turn LED on (matches sample code, clearing = on)
+void LED_on(uint8_t ledPin)
+{
+	PTD->PCOR |= (1 << ledPin);
+}
+
+// Turn LED off (matches sample code, setting = off)
+void LED_off(uint8_t ledPin)
+{
+	PTD->PSOR |= (1 << ledPin);
 }
 
 void FIRCDIV_configure(void)
@@ -33,15 +55,15 @@ void FIRCDIV_configure(void)
 
 void ADC_init(void)
 {
-	// Select clock for ADC
+	// Keep your original clock source (FIRCDIV)
 	PCC->PCCn[PCC_ADC0_INDEX] &= ~PCC_PCCn_CGC_MASK;
 	PCC->PCCn[PCC_ADC0_INDEX] |= PCC_PCCn_PCS(3); // 0b011 -> FIRCDIV2_CLK (48Mhz)
 	PCC->PCCn[PCC_ADC0_INDEX] |= PCC_PCCn_CGC_MASK;
 
-	// Select the mode of operation, clock source, clock divide.
+	// Select the mode of operation, clock source, clock divide
 	ADC0->CFG1 = ADC_CFG1_MODE(1)	  // 0b01 -> 12-bit resolution
-				 | ADC_CFG1_ADICLK(1) // FIRCDIV2_CLK (48Mhz)
-				 | ADC_CFG1_ADIV(1);  // Divide ratio = 1
+				 | ADC_CFG1_ADICLK(0) // ALTCLK1: FIRCDIV2_CLK (48Mhz)
+				 | ADC_CFG1_ADIV(0);  // Divide ratio = 1
 
 	// Select sample time
 	ADC0->CFG2 |= ADC_CFG2_SMPLTS(12);
@@ -59,27 +81,72 @@ void Convert_channel(uint8_t channel)
 	// Clear prior channel and select channel
 	ADC0->SC1[0] &= ~ADC_SC1_ADCH_MASK;
 	ADC0->SC1[0] |= ADC_SC1_ADCH(channel);
+}
 
-	// Wait for ADC0 changes channel
-	while (!(ADC0->SC1[0] & ADC_SC1_COCO_MASK))
-		;
+uint8_t ADC_complete(void)
+{
+	return (ADC0->SC1[0] & ADC_SC1_COCO_MASK) >> ADC_SC1_COCO_SHIFT;
 }
 
 uint32_t Read_ADC(void)
 {
-	uint32_t adc_result = ADC0->R[0];
-	return adc_result;
+	uint32_t adc_result = 0;
+	adc_result = ADC0->R[0];
+	return (uint32_t)((adc_result * 5000) / 0xFFF); // Convert result to mv for 0-5V range
 }
 
 int main(void)
 {
-	LED_init(LED_GREEN);
-	LED_init(LED_RED);
-	LED_init(LED_BLUE);
+	FIRCDIV_configure(); // Configure FIRC dividers
 	ADC_init();
+	LED_init();
+	uint32_t adcResultInMV = 0; // ADC0 result in millivolts
 
 	while (1)
 	{
+		// Convert channel for potentiometer (channel 12)
+		Convert_channel(POT_CHANNEL);
+
+		// Wait for conversion to complete
+		while (ADC_complete() == 0)
+		{
+		}
+
+		// Read the result after conversion completed
+		adcResultInMV = Read_ADC();
+
+		// Control LEDs based on ADC result
+		if (adcResultInMV > 3750) // If result > 3.75V, turn led red on
+		{
+			LED_on(LED_RED);
+			LED_off(LED_BLUE);
+			LED_off(LED_GREEN);
+		}
+		else if (adcResultInMV > 2500) // If result > 2.5V, turn led green on
+		{
+			LED_off(LED_RED);
+			LED_on(LED_GREEN);
+			LED_off(LED_BLUE);
+		}
+		else if (adcResultInMV > 1250) // If result > 1.25V, turn led blue on
+		{
+			LED_off(LED_RED);
+			LED_off(LED_GREEN);
+			LED_on(LED_BLUE);
+		}
+		else
+		{
+			LED_off(LED_RED);
+			LED_off(LED_GREEN);
+			LED_off(LED_BLUE);
+		}
+
+		Convert_channel(29);
+		while (ADC_complete() == 0)
+		{
+		}
+		adcResultInMV = Read_ADC();
 	}
+
 	return 0;
 }
