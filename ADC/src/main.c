@@ -173,7 +173,6 @@ int main(void)
 
 	while (1)
 	{
-		// Main loop - could add low power mode or other tasks here
 	}
 
 	return 0;
