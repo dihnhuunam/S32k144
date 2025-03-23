@@ -3,11 +3,11 @@
 #include "stdint.h"
 #include "interrupt_manager.h"
 
-#define LED_RED 15	   // PTD15
-#define LED_GREEN 16   // PTD16
-#define LED_BLUE 0	   // PTD0
-#define POT_CHANNEL 12 // Channel 12 for potentiometer
-
+#define LED_RED 15		  // PTD15
+#define LED_GREEN 16	  // PTD16
+#define LED_BLUE 0		  // PTD0
+#define POT_CHANNEL 12	  // Channel 12 for potentiometer
+#define VREFSH_CHANNEL 29 // Voltage reference: VREFSH
 void Delay(volatile int cycles)
 {
 	while (cycles--)
@@ -149,7 +149,7 @@ void ADC0_IRQHandler(void)
 		}
 
 		// Switch to the next channel for the next conversion
-		current_channel = 29; // VREFSH channel
+		current_channel = VREFSH_CHANNEL; // VREFSH channel
 	}
 	else
 	{
