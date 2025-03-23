@@ -1,11 +1,12 @@
 #include "S32K144.h"
 #include "clocks.h"
 #include "stdint.h"
+#include "interrupt_manager.h"
 
 #define LED_RED 15	   // PTD15
 #define LED_GREEN 16   // PTD16
 #define LED_BLUE 0	   // PTD0
-#define POT_CHANNEL 12 // Channel 12 for potentionmeter
+#define POT_CHANNEL 12 // Channel 12 for potentiometer
 
 void Delay(volatile int cycles)
 {
@@ -26,17 +27,17 @@ void LED_init(void)
 	// Set data direction as output
 	PTD->PDDR |= (1 << LED_RED) | (1 << LED_GREEN) | (1 << LED_BLUE);
 
-	// Turn off all LEDs initially (setting = off in sample code)
+	// Turn off all LEDs initially
 	PTD->PSOR |= (1 << LED_RED) | (1 << LED_GREEN) | (1 << LED_BLUE);
 }
 
-// Turn LED on (matches sample code, clearing = on)
+// Turn LED on
 void LED_on(uint8_t ledPin)
 {
 	PTD->PCOR |= (1 << ledPin);
 }
 
-// Turn LED off (matches sample code, setting = off)
+// Turn LED off
 void LED_off(uint8_t ledPin)
 {
 	PTD->PSOR |= (1 << ledPin);
@@ -74,9 +75,12 @@ void ADC_init(void)
 
 	// Select type of conversion: single-ended
 	ADC0->SC3 &= ~ADC_SC3_ADCO_MASK; // One conversion will be performed
+
+	// Enable interrupt
+	ADC0->SC1[0] |= ADC_SC1_AIEN_MASK;
 }
 
-void Convert_channel(uint8_t channel)
+void Select_channel(uint8_t channel)
 {
 	// Clear prior channel and select channel
 	ADC0->SC1[0] &= ~ADC_SC1_ADCH_MASK;
@@ -95,41 +99,44 @@ uint32_t Read_ADC(void)
 	return (uint32_t)((adc_result * 5000) / 0xFFF); // Convert result to mv for 0-5V range
 }
 
-int main(void)
+void Interrupt_init(void)
 {
-	FIRCDIV_configure(); // Configure FIRC dividers
-	ADC_init();
-	LED_init();
+	// Clear pending
+	INT_SYS_ClearPending(ADC0_IRQn);
+
+	// Set priority
+	INT_SYS_SetPriority(ADC0_IRQn, 201);
+
+	// Enable Interrupt
+	INT_SYS_EnableIRQ(ADC0_IRQn);
+}
+
+void ADC0_IRQHandler(void)
+{
 	uint32_t adcResultInMV = 0; // ADC0 result in millivolts
+	static uint8_t current_channel = POT_CHANNEL;
 
-	while (1)
+	// Read the result of the completed conversion
+	adcResultInMV = Read_ADC();
+
+	// Process result based on which channel was converted
+	if (current_channel == POT_CHANNEL)
 	{
-		// Convert channel for potentiometer (channel 12)
-		Convert_channel(POT_CHANNEL);
-
-		// Wait for conversion to complete
-		while (ADC_complete() == 0)
-		{
-		}
-
-		// Read the result after conversion completed
-		adcResultInMV = Read_ADC();
-
 		// Control LEDs based on ADC result
-		if (adcResultInMV > 3750) // If result > 3.75V, turn led red on
-		{
+		if (adcResultInMV > 3750)
+		{ // If result > 3.75V, turn led red on
 			LED_on(LED_RED);
 			LED_off(LED_BLUE);
 			LED_off(LED_GREEN);
 		}
-		else if (adcResultInMV > 2500) // If result > 2.5V, turn led green on
-		{
+		else if (adcResultInMV > 2500)
+		{ // If result > 2.5V, turn led green on
 			LED_off(LED_RED);
 			LED_on(LED_GREEN);
 			LED_off(LED_BLUE);
 		}
-		else if (adcResultInMV > 1250) // If result > 1.25V, turn led blue on
-		{
+		else if (adcResultInMV > 1250)
+		{ // If result > 1.25V, turn led blue on
 			LED_off(LED_RED);
 			LED_off(LED_GREEN);
 			LED_on(LED_BLUE);
@@ -141,11 +148,32 @@ int main(void)
 			LED_off(LED_BLUE);
 		}
 
-		Convert_channel(29);
-		while (ADC_complete() == 0)
-		{
-		}
-		adcResultInMV = Read_ADC();
+		// Switch to the next channel for the next conversion
+		current_channel = 29; // VREFSH channel
+	}
+	else
+	{
+		// Switch back to the potentiometer channel
+		current_channel = POT_CHANNEL;
+	}
+
+	// Start the next conversion
+	Select_channel(current_channel);
+}
+
+int main(void)
+{
+	FIRCDIV_configure();
+	ADC_init();
+	LED_init();
+	Interrupt_init();
+
+	// Start the first conversion to kick off the interrupt cycle
+	Select_channel(POT_CHANNEL);
+
+	while (1)
+	{
+		// Main loop - could add low power mode or other tasks here
 	}
 
 	return 0;
