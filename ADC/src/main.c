@@ -8,6 +8,7 @@
 #define LED_BLUE 0		  // PTD0
 #define POT_CHANNEL 12	  // Channel 12 for potentiometer
 #define VREFSH_CHANNEL 29 // Voltage reference: VREFSH
+
 void Delay(volatile int cycles)
 {
 	while (cycles--)
